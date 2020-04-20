@@ -1,0 +1,25 @@
+@import "../node_modules/bulma/sass/utilities/initial-variables";
+@import "../node_modules/bulma/sass/utilities/functions";
+
+// 2. Set your own initial variables
+// Update blue
+$blue: #72d0eb;
+// Add purple and its invert
+$purple: #8c6cff;
+$purple-invert: #fff;
+// Add a serif family
+
+// 3. Set the derived variables
+// Use the new purple as the primary color
+$primary: $purple;
+$primary-invert: $purple-invert;
+// Use the existing orange as the danger color
+$danger: $orange;
+// Use the new serif family
+$family-sans-serif: "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", "Helvetica", "Arial", sans-serif !default;
+
+$family-primary: $family-sans-serif;
+
+#radio1 {
+  background: $yellow;
+}

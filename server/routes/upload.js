@@ -7,12 +7,25 @@ const fs = require('fs');
 
 const router = express.Router()
 
-const upload = multer({ dest: './uploads/' })
+function fileFilter(req, file, cb) {
+  const allowedTypes = ['audio/mp3', 'audio/flac', 'audio/wav']
+  console.log(file.mimetype);
+  if (!allowedTypes.includes(file.mimetype)) {
+    const error = new Error("Wrong file type")
+    error.code = 'WRONG_FILE_TYPE'
+    console.log('error', error.message);
+    cb(error, null)
+    return
+  }
+  cb(null, true)
+}
+
+const upload = multer({ dest: './uploads/', fileFilter })
 const client = new speech.SpeechClient();
 const storage = new Storage();
 const BUCKET = 'recordings777'
 
-async function uploadFile(filePath, filename) {
+async function uploadFile(filePath) {
   await storage.bucket(BUCKET).upload(filePath, {
     metadata: {
       cacheControl: 'public, max-age=31536000',
@@ -25,18 +38,18 @@ async function makePublic(filename) {
   console.log(`gs://${BUCKET}/${filename} is now public.`);
 }
 
-
 router.post('/file', upload.single('file'), async (req, res) => {
   console.log(req.file);
   const { path, mimetype, filename } = req.file
   const duration = Number(req.body.duration)
+
   await uploadFile(path, filename)
   await makePublic(filename)
 
+  fs.unlink(path, () => console.log(path + ' removed.'))
 
   const request = {
     audio: {
-      // content: fs.readFileSync(path).toString('base64'),
       uri: `gs://${BUCKET}/${filename}`,
     },
     config: {
@@ -44,7 +57,6 @@ router.post('/file', upload.single('file'), async (req, res) => {
       // languageCode: 'ro-RO',
       languageCode: 'ro-RO',
       enableAutomaticPunctuation: true,
-      encoding: 'FLAC'
     },
   };
 
@@ -62,16 +74,12 @@ router.post('/file', upload.single('file'), async (req, res) => {
       break;
   }
 
-
   let result
   if (duration < 60) {
     result = await client.recognize(request);
-    console.log('RECOGNIZE');
   } else {
     const [operation] = await client.longRunningRecognize(request);
     result = await operation.promise();
-    console.log(result);
-    console.log('LONG RUNNING RECOGNIZE');
   }
 
   const transcription = result[0].results
@@ -82,5 +90,12 @@ router.post('/file', upload.single('file'), async (req, res) => {
 
   res.json({ transcription })
 });
+
+router.use((err, req, res, next) => {
+  if(err.code === 'WRONG_FILE_TYPE') {
+    res.status(422).json({error: 'File type not supported'})
+  }
+})
+
 
 module.exports = router
