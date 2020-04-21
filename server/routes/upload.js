@@ -1,6 +1,6 @@
 
 const express = require('express')
-const speech = require('@google-cloud/speech');
+const speech = require('@google-cloud/speech').v1p1beta1;
 const { Storage } = require('@google-cloud/storage');
 const multer = require('multer')
 const fs = require('fs');
@@ -24,6 +24,7 @@ const upload = multer({ dest: './uploads/', fileFilter })
 const client = new speech.SpeechClient();
 const storage = new Storage();
 const BUCKET = 'recordings777'
+const { getAudioDurationInSeconds } = require('get-audio-duration')
 
 async function uploadFile(filePath) {
   await storage.bucket(BUCKET).upload(filePath, {
@@ -41,27 +42,30 @@ async function makePublic(filename) {
 router.post('/file', upload.single('file'), async (req, res) => {
   console.log(req.file);
   const { path, mimetype, filename } = req.file
-  const duration = Number(req.body.duration)
+  const duration = req.body.duration
+
+  console.log(req.body);
 
   await uploadFile(path, filename)
   await makePublic(filename)
 
-  fs.unlink(path, () => console.log(path + ' removed.'))
+  // From a local path...
 
+  fs.unlink(path, () => console.log(path + ' removed.'))
   const request = {
     audio: {
-      uri: `gs://${BUCKET}/${filename}`,
+      // uri: `gs://${BUCKET}/${filename}`,
+      content: fs.readFileSync(path).toString('base64')
     },
     config: {
-      sampleRateHertz: 16000,
-      // languageCode: 'ro-RO',
+      sampleRateHertz: 44100,
       languageCode: 'ro-RO',
       enableAutomaticPunctuation: true,
+      model: "default",
     },
   };
 
-  const [mediaType, codec] = mimetype.split('/')
-
+  const  codec = mimetype.split('/')[1]
   switch (codec) {
     case 'flac':
       request.config.encoding = 'FLAC'
@@ -73,15 +77,45 @@ router.post('/file', upload.single('file'), async (req, res) => {
       request.config.encoding = 'LINEAR16'
       break;
   }
+  console.log(request);
 
   let result
-  if (duration < 60) {
-    result = await client.recognize(request);
-  } else {
-    const [operation] = await client.longRunningRecognize(request);
-    result = await operation.promise();
-  }
 
+  try {
+    result = await client.recognize(request);
+  } catch (error) {
+    if (error.code == 3) {
+      const [operation] = await client.longRunningRecognize(request);
+      result = await operation.promise();
+    }
+  }
+  console.log({result});
+  const transcription = result[0].results
+    .map(result => result.alternatives[0].transcript)
+    .join('\n');
+
+  console.log(`Transcription: ${transcription}`);
+
+  res.json({ transcription })
+});
+
+
+
+router.post('/request', async (req, res) => {
+  
+  // From a local path...
+ 
+  let result
+
+  try {
+    result = await client.recognize(request);
+  } catch (error) {
+    if (error.code == 3) {
+      const [operation] = await client.longRunningRecognize(request);
+      result = await operation.promise();
+    }
+  }
+  console.log({result});
   const transcription = result[0].results
     .map(result => result.alternatives[0].transcript)
     .join('\n');
@@ -92,8 +126,8 @@ router.post('/file', upload.single('file'), async (req, res) => {
 });
 
 router.use((err, req, res, next) => {
-  if(err.code === 'WRONG_FILE_TYPE') {
-    res.status(422).json({error: 'File type not supported'})
+  if (err.code === 'WRONG_FILE_TYPE') {
+    res.status(422).json({ error: 'File type not supported' })
   }
 })
 
