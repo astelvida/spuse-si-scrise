@@ -1,6 +1,6 @@
 module.exports = {
   lintOnSave: false,
-  publicPath: "/spuse-si-scrise/",
+  publicPath: "/",
   configureWebpack: {
     devtool: 'eval-source-map',
     devServer: {

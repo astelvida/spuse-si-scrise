@@ -8,7 +8,7 @@ const fs = require('fs');
 const router = express.Router()
 
 function fileFilter(req, file, cb) {
-  const allowedTypes = ['audio/mp3', 'audio/flac', 'audio/wav']
+  const allowedTypes = ['audio/mp3', 'audio/flac', 'audio/wav', 'audio/mpeg']
   console.log(file.mimetype);
   if (!allowedTypes.includes(file.mimetype)) {
     const error = new Error("Wrong file type")
@@ -42,34 +42,27 @@ async function makePublic(filename) {
 router.post('/file', upload.single('file'), async (req, res) => {
   console.log(req.file);
   const { path, mimetype, filename } = req.file
-  const duration = req.body.duration
 
-  console.log(req.body);
 
-  await uploadFile(path, filename)
-  await makePublic(filename)
-
-  // From a local path...
-
-  fs.unlink(path, () => console.log(path + ' removed.'))
   const request = {
     audio: {
-      // uri: `gs://${BUCKET}/${filename}`,
-      content: fs.readFileSync(path).toString('base64')
+      uri: `gs://${BUCKET}/${filename}`,
+      // content: fs.readFileSync(path).toString('base64')
     },
     config: {
-      sampleRateHertz: 44100,
+      // sampleRateHertz: ,
       languageCode: 'ro-RO',
       enableAutomaticPunctuation: true,
       model: "default",
     },
   };
 
-  const  codec = mimetype.split('/')[1]
+  const codec = mimetype.split('/')[1]
   switch (codec) {
     case 'flac':
       request.config.encoding = 'FLAC'
       break;
+    case 'mpeg':
     case 'mp3':
       request.config.encoding = 'MP3'
       break;
@@ -77,34 +70,42 @@ router.post('/file', upload.single('file'), async (req, res) => {
       request.config.encoding = 'LINEAR16'
       break;
   }
+
   console.log(request);
-
   let result
-
+  let transcript
   try {
+    await uploadFile(path, filename)
+    await makePublic(filename)
+    fs.unlink(path, () => console.log(path + ' removed.'))
+    
     result = await client.recognize(request);
-  } catch (error) {
-    if (error.code == 3) {
+  } catch (err) {
+
+    if (err.code == 3 && err.details.includes('Sync input too long')) {
       const [operation] = await client.longRunningRecognize(request);
       result = await operation.promise();
+    } else {
+      
+      console.log(err);
+      res.json({ error: err.details || err })
+      return
     }
   }
-  console.log({result});
-  const transcription = result[0].results
+
+  transcript = result[0].results
     .map(result => result.alternatives[0].transcript)
-    .join('\n');
-
-  console.log(`Transcription: ${transcription}`);
-
-  res.json({ transcription })
+    .join('\n')
+  res.json({ transcript })
+  console.log(`Transcript: ${transcript}`);
 });
 
 
 
 router.post('/request', async (req, res) => {
-  
+
   // From a local path...
- 
+
   let result
 
   try {
@@ -115,14 +116,14 @@ router.post('/request', async (req, res) => {
       result = await operation.promise();
     }
   }
-  console.log({result});
-  const transcription = result[0].results
+  console.log({ result });
+  const transcript = result[0].results
     .map(result => result.alternatives[0].transcript)
     .join('\n');
 
-  console.log(`Transcription: ${transcription}`);
+  console.log(`Transcript: ${transcript}`);
 
-  res.json({ transcription })
+  res.json({ transcript })
 });
 
 router.use((err, req, res, next) => {
